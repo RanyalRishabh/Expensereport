@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinanceFlow Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary: #2563eb; --success: #10b981; --bg: #f8fafc; --danger: #ef4444; --dark: #1e293b; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; color: var(--dark); }
+        .navbar { background: white; padding: 1rem 2rem; display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 100; }
+        .nav-logo { font-weight: 800; color: var(--primary); font-size: 1.5rem; cursor: pointer; }
+        .view { display: none; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        .view.active { display: block; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        input, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; }
+        .btn { padding: 12px 20px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; transition: 0.3s; }
+        .btn-primary { background: var(--primary); color: white; width: 100%; }
+        .btn-sync { background: #4285f4; color: white; margin-bottom: 10px; width: 100%; }
+        .btn-clear { background: #fee2e2; color: var(--danger); width: 100%; border: 1px solid #fecaca; }
+        .progress-bg { background: #e2e8f0; border-radius: 10px; height: 10px; margin: 10px 0; }
+        .progress-fill { background: var(--primary); height: 100%; border-radius: 10px; width: 0%; transition: 0.5s; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #f1f5f9; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; background: #e0e7ff; color: #4338ca; font-weight: bold; }
+        #loginGate { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="nav-logo" onclick="showView('userView')">FinanceFlow</div>
+    <div>
+        <button class="btn" style="color:var(--primary)" onclick="showView('userView')">Add New</button>
+        <button class="btn" style="color:var(--primary)" onclick="openAdmin()">Admin Panel</button>
+    </div>
+</nav>
+
+<div id="userView" class="view active">
+    <div style="max-width: 500px; margin: 0 auto;" class="card">
+        <h2 style="margin-top:0">Log Expense</h2>
+        <form id="expForm">
+            <label>User Name</label><input type="text" id="uName" required>
+            <label>Item Description</label><input type="text" id="uItem" required>
+            <div style="display: flex; gap: 10px;">
+                <div style="flex:2"><label>Amount</label><input type="number" id="uAmt" required></div>
+                <div style="flex:1"><label>Currency</label>
+                    <select id="uCurr"><option value="INR">INR (₹)</option><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option></select>
+                </div>
+            </div>
+            <label>Category</label><select id="uCat"><option>Food</option><option>Travel</option><option>Office</option><option>Misc</option></select>
+            <label>Date</label><input type="date" id="uDate" required>
+            <label>Receipt (Image)</label><input type="file" id="uFile" accept="image/*">
+            <button type="submit" class="btn btn-primary" id="saveBtn">Save Expense</button>
+        </form>
+    </div>
+</div>
+
+<div id="adminView" class="view">
+    <div class="grid">
+        <div class="card">
+            <h3>Budget Tracker</h3>
+            <h1 id="totalDisplay">₹0</h1>
+            <div class="progress-bg"><div id="budgetBar" class="progress-fill"></div></div>
+            <p id="budgetLabel">Limit: ₹10,000</p>
+            <input type="number" id="limitInp" placeholder="Update Limit" onchange="updateLimit()">
+        </div>
+        <div class="card"><canvas id="catChart" height="150"></canvas></div>
+        <div class="card">
+            <h3>Cloud Controls</h3>
+            <button class="btn btn-sync" onclick="syncCloud()" id="syncBtn">☁️ Sync to Google Sheet</button>
+            <button class="btn btn-clear" onclick="clearData()">🗑️ Clear Local Records</button>
+            <p style="font-size: 0.7rem; color: gray; margin-top: 10px;">Clear local data only AFTER a successful Cloud Sync.</p>
+        </div>
+    </div>
+    <div class="card" style="overflow-x:auto;">
+        <input type="text" id="search" placeholder="Search records..." onkeyup="renderTable()" style="margin-bottom:15px;">
+        <table>
+            <thead><tr><th>Date</th><th>User</th><th>Item</th><th>Amount (INR)</th><th>Receipt</th><th>Action</th></tr></thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<div id="loginGate">
+    <div class="card" style="width: 320px; text-align: center;">
+        <h3>Admin Access</h3>
+        <input type="password" id="passInp" placeholder="Enter Password">
+        <button class="btn btn-primary" style="margin-top: 10px;" onclick="checkPass()">Unlock</button>
+        <button class="btn" style="background:none" onclick="document.getElementById('loginGate').style.display='none'">Cancel</button>
+    </div>
+</div>
+
+<script>
+    // 1. REPLACE THIS URL WITH YOUR GOOGLE WEB APP URL
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5ecaR5p8DQkhpYdT68xBSQENMeSa-j2JMYA6yZqHkrX7vDuyX6XHJnqPAH9F_UtZ12g/exec";
+    const RATES = { "INR": 1, "USD": 83.2, "EUR": 90.5 };
+    let myChart = null;
+
+    window.onload = () => {
+        document.getElementById('uDate').value = new Date().toISOString().split('T')[0];
+        renderTable();
+    };
+
+    function showView(id) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function openAdmin() {
+        if(sessionStorage.getItem('auth')) showView('adminView');
+        else document.getElementById('loginGate').style.display = 'flex';
+    }
+
+    function checkPass() {
+        if(document.getElementById('passInp').value === '1234') {
+            sessionStorage.setItem('auth', 'true');
+            document.getElementById('loginGate').style.display = 'none';
+            showView('adminView');
+        } else alert("Access Denied");
+    }
+
+    function updateLimit() {
+        localStorage.setItem('limit', document.getElementById('limitInp').value);
+        renderTable();
+    }
+
+    document.getElementById('expForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('saveBtn');
+        btn.innerText = "Processing...";
+        btn.disabled = true;
+
+        const file = document.getElementById('uFile').files[0];
+        let base64 = null;
+        if(file) {
+            base64 = await new Promise(r => {
+                const reader = new FileReader();
+                reader.onload = () => r(reader.result);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        const amt = parseFloat(document.getElementById('uAmt').value);
+        const curr = document.getElementById('uCurr').value;
+
+        const entry = {
+            id: Date.now(),
+            user: document.getElementById('uName').value,
+            item: document.getElementById('uItem').value,
+            originalAmount: amt,
+            currency: curr,
+            amountINR: (amt * RATES[curr]).toFixed(2),
+            category: document.getElementById('uCat').value,
+            date: document.getElementById('uDate').value,
+            receipt: base64
+        };
+
+        const data = JSON.parse(localStorage.getItem('exp') || '[]');
+        data.push(entry);
+        localStorage.setItem('exp', JSON.stringify(data));
+        
+        alert("Success! Entry saved.");
+        e.target.reset();
+        document.getElementById('uDate').value = new Date().toISOString().split('T')[0];
+        btn.innerText = "Save Expense";
+        btn.disabled = false;
+        renderTable();
+    };
+
+    function renderTable() {
+        const data = JSON.parse(localStorage.getItem('exp') || '[]');
+        const search = document.getElementById('search').value.toLowerCase();
+        const limit = localStorage.getItem('limit') || 10000;
+        let total = 0, html = "", cats = {};
+
+        data.filter(d => d.item.toLowerCase().includes(search) || d.user.toLowerCase().includes(search))
+            .sort((a,b) => new Date(b.date) - new Date(a.date))
+            .forEach(d => {
+                total += parseFloat(d.amountINR);
+                cats[d.category] = (cats[d.category] || 0) + parseFloat(d.amountINR);
+                html += `<tr>
+                    <td>${d.date}</td>
+                    <td><b>${d.user}</b></td>
+                    <td>${d.item} <span class="badge">${d.category}</span></td>
+                    <td>₹${parseFloat(d.amountINR).toLocaleString()}</td>
+                    <td>${d.receipt ? `<button onclick="viewRec('${d.id}')">View</button>` : '-'}</td>
+                    <td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="del('${d.id}')">Delete</button></td>
+                </tr>`;
+            });
+
+        document.getElementById('tableBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center">No data found</td></tr>';
+        document.getElementById('totalDisplay').innerText = "₹" + total.toLocaleString();
+        
+        const perc = (total / limit) * 100;
+        document.getElementById('budgetBar').style.width = Math.min(perc, 100) + "%";
+        document.getElementById('budgetBar').style.background = perc > 100 ? "var(--danger)" : "var(--primary)";
+        document.getElementById('budgetLabel').innerText = `Limit: ₹${limit} (${Math.round(perc)}%)`;
+        updateChart(cats);
+    }
+
+    function del(id) {
+        if(confirm("Permanently delete this entry?")) {
+            let data = JSON.parse(localStorage.getItem('exp') || '[]');
+            data = data.filter(d => d.id != id);
+            localStorage.setItem('exp', JSON.stringify(data));
+            renderTable();
+        }
+    }
+
+    function clearData() {
+        if(confirm("WARNING: This will delete ALL local records. Make sure you have synced to Google first. Continue?")) {
+            localStorage.removeItem('exp');
+            renderTable();
+        }
+    }
+
+    function viewRec(id) {
+        const d = JSON.parse(localStorage.getItem('exp')).find(x => x.id == id);
+        const w = window.open("");
+        w.document.write(`<title>Receipt Preview</title><img src="${d.receipt}" style="max-width:100%; border-radius:8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">`);
+    }
+
+    function updateChart(cats) {
+        const ctx = document.getElementById('catChart').getContext('2d');
+        if(myChart) myChart.destroy();
+        myChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(cats),
+                datasets: [{ data: Object.values(cats), backgroundColor: ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'] }]
+            },
+            options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, maintainAspectRatio: false }
+        });
+    }
+
+    async function syncCloud() {
+        const btn = document.getElementById('syncBtn');
+        const data = localStorage.getItem('exp');
+        if(!data || data === '[]') return alert("Nothing to sync!");
+        
+        btn.disabled = true;
+        btn.innerText = "⏳ Syncing...";
+        
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: data });
+            alert("✅ Cloud Sync Successful! Your Google Sheet is updated.");
+        } catch(e) {
+            alert("Sync Failed. Check your URL and connection.");
+        }
+        btn.disabled = false;
+        btn.innerText = "☁️ Submit to Google Sheet";
+    }
+</script>
+</body>
+</html>
